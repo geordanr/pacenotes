@@ -7,6 +7,8 @@ Number::toRad = () ->
 Number::toDeg = () ->
     ((this * (180 / Math.PI)) + 360) % 360
 
+DISTANCE_THRESHOLD = 5
+
 class Point
     constructor: (latitude_deg, longitude_deg, elevation) ->
         @lat_deg = latitude_deg
@@ -134,9 +136,11 @@ getSegments = (polyline, callback) ->
         i++
         while decoded_polyline.length > 0
             new_point = new Point(decoded_polyline.shift(), decoded_polyline.shift(), elevation_data[i].elevation)
-            segments.push new Segment(prev_point, new_point)
-            prev_point = new_point
             i++
+            new_segment = new Segment(prev_point, new_point)
+            if new_segment.distance > DISTANCE_THRESHOLD
+                segments.push new_segment
+                prev_point = new_point
 
         callback segments
 
