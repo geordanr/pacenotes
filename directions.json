@@ -1,0 +1,120 @@
+{
+   "routes" : [
+      {
+         "bounds" : {
+            "northeast" : {
+               "lat" : 37.5915905,
+               "lng" : -122.3605507
+            },
+            "southwest" : {
+               "lat" : 37.5886426,
+               "lng" : -122.3627454
+            }
+         },
+         "copyrights" : "Map data ©2013 Google",
+         "legs" : [
+            {
+               "distance" : {
+                  "text" : "0.5 mi",
+                  "value" : 753
+               },
+               "duration" : {
+                  "text" : "2 mins",
+                  "value" : 92
+               },
+               "end_address" : "1040 Broadway, Burlingame, CA 94010, USA",
+               "end_location" : {
+                  "lat" : 37.5886426,
+                  "lng" : -122.3626296
+               },
+               "start_address" : "1308 Old Bayshore Highway, Burlingame, CA 94010, USA",
+               "start_location" : {
+                  "lat" : 37.5910696,
+                  "lng" : -122.3605507
+               },
+               "steps" : [
+                  {
+                     "distance" : {
+                        "text" : "0.2 mi",
+                        "value" : 398
+                     },
+                     "duration" : {
+                        "text" : "1 min",
+                        "value" : 34
+                     },
+                     "end_location" : {
+                        "lat" : 37.5912459,
+                        "lng" : -122.3616377
+                     },
+                     "html_instructions" : "Head \u003cb\u003esouthwest\u003c/b\u003e",
+                     "polyline" : {
+                        "points" : "e_mdFlpyiVHJPHb@Nl@TB@DDBF@H@F?F?FAHCNOd@GXS`@iB`DKPEFEFEBA@C@C@C?A?C?CAA?AAAAA?CCACCC?CAC?AAC?E?C?I@I@O@KDQBMBOJ[JSJQJQ"
+                     },
+                     "start_location" : {
+                        "lat" : 37.5910696,
+                        "lng" : -122.3605507
+                     },
+                     "travel_mode" : "DRIVING"
+                  },
+                  {
+                     "distance" : {
+                        "text" : "0.1 mi",
+                        "value" : 212
+                     },
+                     "duration" : {
+                        "text" : "1 min",
+                        "value" : 17
+                     },
+                     "end_location" : {
+                        "lat" : 37.5894969,
+                        "lng" : -122.3614345
+                     },
+                     "html_instructions" : "Merge onto \u003cb\u003eBroadway\u003c/b\u003e",
+                     "maneuver" : "merge",
+                     "polyline" : {
+                        "points" : "i`mdFfwyiVV[NOJIPKNINGNENCPCRAX?N?L@NBH@XHLDNDTNPJ"
+                     },
+                     "start_location" : {
+                        "lat" : 37.5912459,
+                        "lng" : -122.3616377
+                     },
+                     "travel_mode" : "DRIVING"
+                  },
+                  {
+                     "distance" : {
+                        "text" : "469 ft",
+                        "value" : 143
+                     },
+                     "duration" : {
+                        "text" : "1 min",
+                        "value" : 41
+                     },
+                     "end_location" : {
+                        "lat" : 37.5886426,
+                        "lng" : -122.3626296
+                     },
+                     "html_instructions" : "Keep \u003cb\u003eleft\u003c/b\u003e to stay on \u003cb\u003eBroadway\u003c/b\u003e\u003cdiv style=\"font-size:0.9em\"\u003eDestination will be on the right\u003c/div\u003e",
+                     "maneuver" : "keep-left",
+                     "polyline" : {
+                        "points" : "kuldF|uyiVXXf@v@p@tA`@r@TR"
+                     },
+                     "start_location" : {
+                        "lat" : 37.5894969,
+                        "lng" : -122.3614345
+                     },
+                     "travel_mode" : "DRIVING"
+                  }
+               ],
+               "via_waypoint" : []
+            }
+         ],
+         "overview_polyline" : {
+            "points" : "e_mdFlpyiVHJPHpAd@HFDP?`@St@GXS`@uBrDKNOHMAGCIOCOBg@N{@Vo@Vc@f@k@\\U^Q^Id@Eh@?`AP\\Jf@ZXXf@v@rAhCTR"
+         },
+         "summary" : "Broadway",
+         "warnings" : [],
+         "waypoint_order" : []
+      }
+   ],
+   "status" : "OK"
+}

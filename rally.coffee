@@ -1,6 +1,11 @@
 https = require 'https'
 iced = require('iced-coffee-script').iced
 
+IM_ON_A_PLANE = true
+
+# XXX DEBUG
+fs = require 'fs'
+
 Number::toRad = () ->
     this * (Math.PI / 180)
 
@@ -91,8 +96,17 @@ class Curve
     # direction LEFT/RIGHT/STRAIGHT
     # tightness 1-6
     # climb UPHILL/DOWNHILL/CREST
-    constructor: (segments) ->
+    constructor: (direction, segments) ->
         @segments = segments
+        @direction = direction
+
+        # analyze curve
+        @distance = 0
+        for segment in segments
+            @distance += segment.distance
+
+    toString: () ->
+        """#{@direction} #{@distance.toFixed 2}m"""
 
 class Step
     # A gmaps "step"
@@ -106,14 +120,18 @@ class Step
 
 computePaceNotes = (origin, destination) ->
     # The main thing.
-    https.get "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}", (res) ->
-        json = ''
-        res.on 'data', (chunk) ->
-            json += chunk
-        res.on 'end', () ->
-            parseMapData JSON.parse(json)
-    .on 'error', (e) ->
-        console.log "Error: #{e.message}"
+    if IM_ON_A_PLANE
+        fs.readFile 'directions.json', (err, data) ->
+            parseMapData JSON.parse(data)
+    else
+        https.get "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}", (res) ->
+            json = ''
+            res.on 'data', (chunk) ->
+                json += chunk
+            res.on 'end', () ->
+                parseMapData JSON.parse(json)
+        .on 'error', (e) ->
+            console.log "Error: #{e.message}"
 
 generateCurvesForStep = (step_idx, instructions, segments, callback) ->
     # Returns list of Curves
@@ -123,17 +141,17 @@ generateCurvesForStep = (step_idx, instructions, segments, callback) ->
     for segment in segments
         bearing_delta = if prev_seg? then (segment.bearing - prev_seg.bearing).toBearing() else 0
         prev_seg = segment
-        console.log "Step #{step_idx}: #{segment.toString()}, bearing delta #{bearing_delta.toFixed 2}"
+        #console.log "Step #{step_idx}: #{segment.toString()}, bearing delta #{bearing_delta.toFixed 2}"
 
     curves = []
     current_curve_segments = []
     possible_next_straight_segments = []
 
-    current_curve_direction = 'STRAIGHT'
+    current_curve_direction = null
     total_curve_length = 0
 
     for segment in segments
-        if current_curve_segments.length < 2
+        if current_curve_segments.length < 2 and current_curve_direction is null
             # haven't collected enough to know what's going on
             current_curve_segments.push segment
             total_curve_length += segment.distance
@@ -142,23 +160,19 @@ generateCurvesForStep = (step_idx, instructions, segments, callback) ->
                 current_curve_direction = (segment.bearing - current_curve_segments[current_curve_segments.length-1].bearing).toBearing().toDirection()
         else
             # see if this segment is valid for extending the current curve
-
             prev_segment = current_curve_segments[current_curve_segments.length-1]
             bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
             new_direction = bearing_delta.toDirection()
 
             if new_direction != current_curve_direction
-                if new_direction == 'STRAIGHT'
-                    # if the new direction is straight, it might not be long enough to break the curve
-                    if prev_segment.distance + segment.distance
-                        ''
-
                 # output the current curve, but hang on to the last segment of that curve
-                curves.push new Curve(current_curve_segments)
-                current_curve_segments
+                curves.push new Curve(current_curve_direction, current_curve_segments)
+                current_curve_segments = [ prev_segment ]
+                current_curve_direction = new_direction
+    if current_curve_segments.length > 0
+        curves.push new Curve(current_curve_direction, current_curve_segments)
 
-
-    callback step_idx, instructions, segments
+    callback curves
 
 collapseStraights = (segments) ->
     # collapses strings of segments whose total bearing delta is < TURN_THRESHOLD_DEG
@@ -208,7 +222,7 @@ parseMapData = (mapData_obj) ->
                         generateCurvesForStep step_idx, instructions, segments, (curves) ->
                             steps[step_idx] = new Step(step_idx, instructions, curves)
                             if (s for s in steps when s is null).length == 0
-                                # all done
+                                # done waiting for elevation callbacks
                                 displaySteps steps
                         #console.log "--- Step #{step_idx}: #{instructions}"
                         #for segment in segment_data
@@ -217,17 +231,23 @@ parseMapData = (mapData_obj) ->
 displaySteps = (steps) ->
     for step in steps
         console.log step.toString()
+        for curve in step.curves
+            console.log "  #{curve.toString()}"
 
 getElevationsAlongPolyline = (polyline, callback) ->
     # Calls callback with elevation_data.results
-    https.get "https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline}", (res) ->
-        json = ''
-        res.on 'data', (chunk) ->
-            json += chunk
-        res.on 'end', () ->
-            parseElevationData JSON.parse(json), callback
-    .on 'error', (e) ->
-        console.log "Error: #{e.message}"
+    if IM_ON_A_PLANE
+        fs.readFile "elevations.json", (err, data) ->
+            parseElevationData JSON.parse(data)[polyline], callback
+    else
+        https.get "https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline}", (res) ->
+            json = ''
+            res.on 'data', (chunk) ->
+                json += chunk
+            res.on 'end', () ->
+                parseElevationData JSON.parse(json), callback
+        .on 'error', (e) ->
+            console.log "Error: #{e.message}"
 
 parseElevationData = (elevData_obj, callback) ->
     throw "Could not get elevation data, status was: #{elevData_obj.status}" unless elevData_obj.status == 'OK'
