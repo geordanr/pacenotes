@@ -1,7 +1,7 @@
 https = require 'https'
 iced = require('iced-coffee-script').iced
 
-IM_ON_A_PLANE = true
+IM_ON_A_PLANE = false
 
 # XXX DEBUG
 fs = require 'fs'
@@ -36,8 +36,9 @@ Array::min = () ->
 
 
 DISTANCE_THRESHOLD = 5
-TURN_THRESHOLD_DEG = 5
+TURN_THRESHOLD_DEG = 10
 MIN_STRAIGHT_LENGTH = 50
+MIN_HILL_ELEVATION = 2
 
 class Point
     constructor: (latitude_deg, longitude_deg, elevation) ->
@@ -100,13 +101,60 @@ class Curve
         @segments = segments
         @direction = direction
 
+        if @segments.length == 1 and @direction != 'STRAIGHT'
+            throw "Single segment curves must be straights, got direction #{@direction} for segments: #{@segments}"
+
         # analyze curve
         @distance = 0
+        start_elevation = segments[0].start_elevation
+        end_elevation = segments[segments.length-1].end_elevation
+        min_elevation = Infinity
+        max_elevation = -Infinity
+        total_bearing_delta = 0
+        prev_bearing = segments[0].bearing
+
         for segment in segments
             @distance += segment.distance
+            min_elevations = segment.min_elevation if segment.min_elevation < min_elevation
+            max_elevations = segment.max_elevation if segment.max_elevation < max_elevation
+            total_bearing_delta += (segment.bearing - prev_bearing)
+            prev_bearing = segment.bearing
+            #console.log "segment bearing #{segment.bearing}"
+
+        climb_attributes = []
+        if Math.abs(start_elevation - end_elevation) > MIN_HILL_ELEVATION
+            climb_attributes.push(if start_elevation < end_elevation then 'UPHILL' else 'DOWNHILL')
+        if max_elevation > start_elevation or max_elevation > end_elevation
+            climb_attributes.push 'CREST'
+        if min_elevation < start_elevation or min_elevation < end_elevation
+            climb_attributes.push 'DIP'
+        @climb = climb_attributes.join ' '
+
+        #console.log "final bearing delta #{total_bearing_delta} (direction #{@direction}) over #{@segments.length} segments"
+        @turn_info = ''
+        @debug_info = ''
+        unless @direction == 'STRAIGHT'
+            total_turn = Math.abs(total_bearing_delta)
+            deg_per_m = total_turn / @distance
+            if deg_per_m < 0.3
+                @turn_info += ' 6'
+            else if deg_per_m < 0.4
+                @turn_info += ' 5'
+            else if deg_per_m < 0.5
+                @turn_info += ' 4'
+            else if deg_per_m < 0.6
+                @turn_info += ' 3'
+            else if deg_per_m < 0.7
+                @turn_info += ' 2'
+            else
+                @turn_info += ' 1'
+            if total_turn > 135
+                @turn_info += ' HAIRPIN'
+            @debug_info += " (#{deg_per_m.toFixed 2} deg/m, total turn #{total_turn.toFixed 2} deg)"
 
     toString: () ->
-        """#{@direction} #{@distance.toFixed 2}m"""
+        #curve_breakdown = "\n" + ( "\t#{segment.toString()}" for segment in @segments ).join '\n'
+        """#{@direction}#{@turn_info} #{5 * parseInt(@distance / 5)}m #{@climb}#{@debug_info}"""
 
 class Step
     # A gmaps "step"
@@ -116,7 +164,7 @@ class Step
         @curves = curves
 
     toString: () ->
-        "[Step ##{@step_idx}: #{@instructions}]"
+        "[Step ##{@step_idx+1}: #{@instructions}]"
 
 computePaceNotes = (origin, destination) ->
     # The main thing.
@@ -137,63 +185,86 @@ generateCurvesForStep = (step_idx, instructions, segments, callback) ->
     # Returns list of Curves
 
     segments = collapseStraights segments
-    prev_seg = null
-    for segment in segments
-        bearing_delta = if prev_seg? then (segment.bearing - prev_seg.bearing).toBearing() else 0
-        prev_seg = segment
-        #console.log "Step #{step_idx}: #{segment.toString()}, bearing delta #{bearing_delta.toFixed 2}"
+    if segments.length == 1
+        #console.log "shortcut straight"
+        curves = [ new Curve('STRAIGHT', segments) ]
+    else
+        prev_seg = null
+        for segment in segments
+            bearing_delta = if prev_seg? then (segment.bearing - prev_seg.bearing).toBearing() else 0
+            prev_seg = segment
+            #console.log "Step #{step_idx}: #{segment.toString()}, bearing delta #{bearing_delta.toFixed 2}"
 
-    curves = []
-    current_curve_segments = []
-    possible_next_straight_segments = []
+        curves = []
+        current_curve_segments = []
+        possible_next_straight_segments = []
 
-    current_curve_direction = null
-    total_curve_length = 0
+        current_curve_direction = null
+        total_curve_length = 0
 
-    for segment in segments
-        if current_curve_segments.length < 2 and current_curve_direction is null
-            # haven't collected enough to know what's going on
-            current_curve_segments.push segment
-            total_curve_length += segment.distance
-            if current_curve_segments.length == 2
-                # we have enough to set the direction
-                current_curve_direction = (segment.bearing - current_curve_segments[current_curve_segments.length-1].bearing).toBearing().toDirection()
-        else
-            # see if this segment is valid for extending the current curve
+        for segment in segments
             prev_segment = current_curve_segments[current_curve_segments.length-1]
-            bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
-            new_direction = bearing_delta.toDirection()
+            if current_curve_segments.length < 2 and current_curve_direction is null
+                # haven't collected enough to know what's going on
+                current_curve_segments.push segment
+                total_curve_length += segment.distance
+                if current_curve_segments.length == 2
+                    # we have enough to set the direction
+                    current_curve_direction = (segment.bearing - prev_segment.bearing).toBearing().toDirection()
+                    #console.log "initial direction #{current_curve_direction} based on bearing change #{(segment.bearing - prev_segment.bearing).toBearing()}, heading #{segment.bearing.toFixed 2}"
+            else
+                # see if this segment is valid for extending the current curve
+                bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
+                new_direction = bearing_delta.toDirection()
+                #console.log "was heading #{prev_segment.bearing.toFixed 2}, now heading #{segment.bearing.toFixed 2}; bearing delta is now #{bearing_delta.toFixed 2}, setting new direction to #{new_direction}"
 
-            if new_direction != current_curve_direction
-                # output the current curve, but hang on to the last segment of that curve
-                curves.push new Curve(current_curve_direction, current_curve_segments)
-                current_curve_segments = [ prev_segment ]
-                current_curve_direction = new_direction
-    if current_curve_segments.length > 0
-        curves.push new Curve(current_curve_direction, current_curve_segments)
+                if new_direction != current_curve_direction
+                    # output the current curve, but hang on to the last segment of that curve
+                    #console.log "direction changed from #{current_curve_direction} to #{new_direction}, pushing curve with direction #{current_curve_direction}"
+                    curves.push new Curve(current_curve_direction, current_curve_segments)
+                    current_curve_segments = [ prev_segment ]
+                    current_curve_direction = new_direction
+
+                # either way, add the segment
+                current_curve_segments.push segment
+        if current_curve_segments.length > 0
+            #console.log "leftover segments forming a curve with direction #{current_curve_direction}"
+            curves.push new Curve(current_curve_direction, current_curve_segments)
 
     callback curves
 
 collapseStraights = (segments) ->
     # collapses strings of segments whose total bearing delta is < TURN_THRESHOLD_DEG
+
+    debug_id = parseInt(Math.random() * 1000)
+    #console.log "#{debug_id}: all segments:\n#{("\t#{segment.toString()}" for segment in segments).join "\n"}"
+
     collapsed_segments = []
     possible_straight_segments = []
     total_bearing_delta = null
     for segment in segments
+        #console.log "#{debug_id}: examining segment #{segment.toString()}"
         if possible_straight_segments.length == 0
             possible_straight_segments.push segment
             total_bearing_delta = 0
         else
-            bearing_delta = (segment.bearing - possible_straight_segments[possible_straight_segments.length-1].bearing).toBearing()
+            prev_straight_segment = possible_straight_segments[possible_straight_segments.length-1]
+            bearing_delta = (segment.bearing - prev_straight_segment.bearing).toBearing()
             if bearing_delta.toDirection() == 'STRAIGHT'
                 # check if this makes the total bearing change too high
                 if (total_bearing_delta + bearing_delta).toBearing().toDirection() == 'STRAIGHT'
                     # extends the straight
                     possible_straight_segments.push segment
                     total_bearing_delta = (total_bearing_delta + bearing_delta).toBearing()
+                    #console.log "#{debug_id}: current segment extends the straight, possible straight segments is now:"
+                    #for s in possible_straight_segments
+                    #    console.log "#{debug_id}:\t#{s.toString()}"
                     continue
             # a new straight or a curve is starting
-            new_segment = new Segment(possible_straight_segments[0].src_point, possible_straight_segments[possible_straight_segments.length-1].dest_point)
+            #console.log "#{debug_id}: creating collapsed segment from possible straight:"
+            #for s in possible_straight_segments
+            #    console.log "#{debug_id}:\t#{s.toString()}"
+            new_segment = new Segment(possible_straight_segments[0].src_point, prev_straight_segment.dest_point)
             min_elevations = (s.min_elevation for s in possible_straight_segments)
             max_elevations = (s.max_elevation for s in possible_straight_segments)
             elevations = min_elevations.concat max_elevations
@@ -201,8 +272,14 @@ collapseStraights = (segments) ->
             new_segment.max_elevation = elevations.max()
             collapsed_segments.push new_segment
             possible_straight_segments = [ segment ]
+            #console.log "#{debug_id}: possible straight segment list is now:"
+            #for s in possible_straight_segments
+            #    console.log "#{debug_id}:\t#{s.toString()}"
             total_bearing_delta = 0
     if possible_straight_segments.length > 0
+        #console.log "#{debug_id}: creating straight from leftover possible straight:"
+        #for s in possible_straight_segments
+        #    console.log "#{debug_id}:\t#{s.toString()}"
         collapsed_segments.push new Segment(possible_straight_segments[0].src_point, possible_straight_segments[possible_straight_segments.length-1].dest_point)
 
     collapsed_segments
@@ -214,6 +291,7 @@ parseMapData = (mapData_obj) ->
     for route in mapData_obj.routes
         for leg in route.legs
             for step, step_idx in leg.steps
+                #continue unless step_idx == 2 # DEBUG
                 steps.push null
                 polyline = step.polyline.points
                 instructions = step.html_instructions
@@ -308,5 +386,5 @@ test_decodePolyline = () ->
     else
         console.log 'decodePolyline() ok'
 
-#computePaceNotes '1 Infinite Loop Cupertino, CA 95014', '1600 Amphitheatre Parkway Mountain View, CA 94043'
-computePaceNotes '1308 Old Bayshore Hwy, Burlingame, CA 94010', '1040 Broadway, Burlingame, CA, 94010'
+computePaceNotes '1 Infinite Loop Cupertino, CA 95014', '1600 Amphitheatre Parkway Mountain View, CA 94043'
+#computePaceNotes '1308 Old Bayshore Hwy, Burlingame, CA 94010', '1040 Broadway, Burlingame, CA, 94010'
