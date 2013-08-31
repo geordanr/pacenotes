@@ -150,7 +150,20 @@ class Curve
                 @turn_info += ' 1'
             if total_turn > 135
                 @turn_info += ' HAIRPIN'
-            @debug_info += " (#{deg_per_m.toFixed 2} deg/m, total turn #{total_turn.toFixed 2} deg)"
+            else if total_turn > 90
+                @turn_info += ' LONG'
+
+            bdiff = ((s.bearing - segments[i-1].bearing).toBearing() for s, i in segments when i > 0)
+            dbdiff_dt = (b - bdiff[i-1] for b, i in bdiff when i > 0)
+            total_diff = 0
+            for d in dbdiff_dt
+                total_diff += d
+            if total_diff < -5
+                @turn_info += ' TIGHTENS'
+            else if total_diff > 5
+                @turn_info += ' OPENS'
+
+            @debug_info += " (#{deg_per_m.toFixed 2} deg/m, total turn #{total_turn.toFixed 2} deg), total bearing diff #{total_diff.toFixed 2}"
 
     toString: () ->
         #curve_breakdown = "\n" + ( "\t#{segment.toString()}" for segment in @segments ).join '\n'
@@ -386,5 +399,6 @@ test_decodePolyline = () ->
     else
         console.log 'decodePolyline() ok'
 
-computePaceNotes '1 Infinite Loop Cupertino, CA 95014', '1600 Amphitheatre Parkway Mountain View, CA 94043'
+#computePaceNotes '1 Infinite Loop Cupertino, CA 95014', '1600 Amphitheatre Parkway Mountain View, CA 94043'
 #computePaceNotes '1308 Old Bayshore Hwy, Burlingame, CA 94010', '1040 Broadway, Burlingame, CA, 94010'
+computePaceNotes '17288 Skyline Blvd, Woodside, CA 94062', '2 Friars Ln, Woodside, CA 94062'
