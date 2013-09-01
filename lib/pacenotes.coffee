@@ -39,7 +39,7 @@ TURN_THRESHOLD_DEG = 10
 MIN_STRAIGHT_LENGTH = 50
 MIN_HILL_ELEVATION = 2
 
-exports.paceNotes = (origin, destination) ->
+exports.paceNotes = (origin, destination, callback=displaySteps) ->
     # The main thing.
     if IM_ON_A_PLANE
         fs.readFile 'directions.json', (err, data) ->
@@ -50,9 +50,10 @@ exports.paceNotes = (origin, destination) ->
             res.on 'data', (chunk) ->
                 json += chunk
             res.on 'end', () ->
-                parseMapData JSON.parse(json)
+                parseMapData JSON.parse(json), callback
         .on 'error', (e) ->
             console.log "Error: #{e.message}"
+    null
 
 class Point
     constructor: (latitude_deg, longitude_deg, elevation) ->
@@ -299,8 +300,9 @@ collapseStraights = (segments) ->
 
     collapsed_segments
 
-parseMapData = (mapData_obj) ->
+parseMapData = (mapData_obj, callback) ->
     # Parse map directions object
+    # Calls callback with steps
     throw "Could not get directions, status was: #{mapData_obj.status}" unless mapData_obj.status == 'OK'
     steps = []
     for route in mapData_obj.routes
@@ -316,7 +318,8 @@ parseMapData = (mapData_obj) ->
                             steps[step_idx] = new Step(step_idx, instructions, curves)
                             if (s for s in steps when s is null).length == 0
                                 # done waiting for elevation callbacks
-                                displaySteps steps
+                                #displaySteps steps
+                                callback steps
                         #console.log "--- Step #{step_idx}: #{instructions}"
                         #for segment in segment_data
                         #    console.log "#{step_idx}: #{segment.toString()}"
