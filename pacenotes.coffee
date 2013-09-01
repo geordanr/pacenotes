@@ -1,5 +1,4 @@
 https = require 'https'
-iced = require('iced-coffee-script').iced
 
 IM_ON_A_PLANE = false
 
@@ -39,6 +38,21 @@ DISTANCE_THRESHOLD = 5
 TURN_THRESHOLD_DEG = 10
 MIN_STRAIGHT_LENGTH = 50
 MIN_HILL_ELEVATION = 2
+
+exports.paceNotes = (origin, destination) ->
+    # The main thing.
+    if IM_ON_A_PLANE
+        fs.readFile 'directions.json', (err, data) ->
+            parseMapData JSON.parse(data)
+    else
+        https.get "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}", (res) ->
+            json = ''
+            res.on 'data', (chunk) ->
+                json += chunk
+            res.on 'end', () ->
+                parseMapData JSON.parse(json)
+        .on 'error', (e) ->
+            console.log "Error: #{e.message}"
 
 class Point
     constructor: (latitude_deg, longitude_deg, elevation) ->
@@ -130,6 +144,8 @@ class Curve
             climb_attributes.push 'DIP'
         @climb = climb_attributes.join ' '
 
+        @rounded_distance = 5 * parseInt(@distance / 5)
+
         #console.log "final bearing delta #{total_bearing_delta} (direction #{@direction}) over #{@segments.length} segments"
         @turn_info = ''
         @debug_info = ''
@@ -164,10 +180,11 @@ class Curve
                 @turn_info += ' OPENS'
 
             @debug_info += " (#{deg_per_m.toFixed 2} deg/m, total turn #{total_turn.toFixed 2} deg), total bearing diff #{total_diff.toFixed 2}"
+            @debug_info = ''
 
     toString: () ->
         #curve_breakdown = "\n" + ( "\t#{segment.toString()}" for segment in @segments ).join '\n'
-        """#{@direction}#{@turn_info} #{5 * parseInt(@distance / 5)}m #{@climb}#{@debug_info}"""
+        """#{@direction} #{@climb} #{@turn_info} #{@rounded_distance}m #{@debug_info}""".replace(/\s+/g, ' ')
 
 class Step
     # A gmaps "step"
@@ -178,21 +195,6 @@ class Step
 
     toString: () ->
         "[Step ##{@step_idx+1}: #{@instructions}]"
-
-computePaceNotes = (origin, destination) ->
-    # The main thing.
-    if IM_ON_A_PLANE
-        fs.readFile 'directions.json', (err, data) ->
-            parseMapData JSON.parse(data)
-    else
-        https.get "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}", (res) ->
-            json = ''
-            res.on 'data', (chunk) ->
-                json += chunk
-            res.on 'end', () ->
-                parseMapData JSON.parse(json)
-        .on 'error', (e) ->
-            console.log "Error: #{e.message}"
 
 generateCurvesForStep = (step_idx, instructions, segments, callback) ->
     # Returns list of Curves
@@ -399,6 +401,6 @@ test_decodePolyline = () ->
     else
         console.log 'decodePolyline() ok'
 
-#computePaceNotes '1 Infinite Loop Cupertino, CA 95014', '1600 Amphitheatre Parkway Mountain View, CA 94043'
-#computePaceNotes '1308 Old Bayshore Hwy, Burlingame, CA 94010', '1040 Broadway, Burlingame, CA, 94010'
-computePaceNotes '17288 Skyline Blvd, Woodside, CA 94062', '2 Friars Ln, Woodside, CA 94062'
+#exports.paceNotes '1 Infinite Loop Cupertino, CA 95014', '1600 Amphitheatre Parkway Mountain View, CA 94043'
+#exports.paceNotes '1308 Old Bayshore Hwy, Burlingame, CA 94010', '1040 Broadway, Burlingame, CA, 94010'
+#exports.paceNotes '17288 Skyline Blvd, Woodside, CA 94062', '2 Friars Ln, Woodside, CA 94062'
