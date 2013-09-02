@@ -1,0 +1,57 @@
+!!!
+html(lang="en")
+  head
+    title Pace Notes for Google Maps
+    link(rel="stylesheet", href="bootstrap/css/bootstrap.min.css", media="screen")
+    link(rel="stylesheet", href="font-awesome/css/font-awesome.min.css", media="screen")
+  body
+    .container
+      .row
+        .span11
+          form.form-horizontal
+            .control-group
+              label.control-label(for="origin") Start
+              .controls
+                input.input-xxlarge#origin(type="text", name="origin", placeholder="Enter starting address or location...", value=origin)
+            .control-group
+              .controls
+                button.btn#swap
+                  i.icon-exchange
+            .control-group
+              label.control-label(for="destination") End
+              .controls
+                input.input-xxlarge#destination(type="text", name="destination", placeholder="Enter destination address or location...", value=destination)
+            .control-group
+              .controls
+                button.btn#submit Get Directions
+      - if (error)
+        .row
+          .span12#errors
+            = error
+      .row
+        .span12#directions
+            - if (leg)
+              h4!= leg.toHTML()
+              - each step in leg.steps
+                .row
+                  .span12
+                    != step.instructions
+                    - each curve in step.curves
+                      .row
+                        .span1!= curve.directionIconHTML()
+                        .span11!= curve.toHTML()
+
+    script(src="javascripts/jquery-1.10.2.min.js")
+    script(src="bootstrap/js/bootstrap.min.js")
+    script.
+      $('document').ready(function () {
+        $('#submit').click(function (e) {
+          $(form).submit();
+        });
+        $('#swap').click(function (e) {
+            orig = $('#origin').val();
+            dest = $('#destination').val();
+            $('#origin').val(dest);
+            $('#destination').val(orig);
+        });
+      })

@@ -39,20 +39,33 @@ TURN_THRESHOLD_DEG = 10
 MIN_STRAIGHT_LENGTH = 50
 MIN_HILL_ELEVATION = 2
 
+DIRECTION_TO_ICON_CLASS=
+    STRAIGHT: 'icon-arrow-up'
+    LEFT: 'icon-mail-reply'
+    RIGHT: 'icon-mail-forward'
+
 exports.paceNotes = (origin, destination, callback=displaySteps) ->
     # The main thing.
     if IM_ON_A_PLANE
         fs.readFile 'directions.json', (err, data) ->
-            parseMapData JSON.parse(data)
+            parseMapData JSON.parse(data), callback
     else
+        console.log "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}"
         https.get "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}", (res) ->
             json = ''
             res.on 'data', (chunk) ->
                 json += chunk
             res.on 'end', () ->
-                parseMapData JSON.parse(json), callback
+                try
+                    parseMapData JSON.parse(json), callback
+                catch err
+                    callback
+                        leg: null
+                        error: err
         .on 'error', (e) ->
-            console.log "Error: #{e.message}"
+            callback
+                leg: null
+                error: "Error contacting Google Maps API: #{e.message}"
     null
 
 class Point
@@ -148,44 +161,60 @@ class Curve
         @rounded_distance = 5 * parseInt(@distance / 5)
 
         #console.log "final bearing delta #{total_bearing_delta} (direction #{@direction}) over #{@segments.length} segments"
-        @turn_info = ''
         @debug_info = ''
+        @tightness = ''
+        @turn_type = ''
+        @turn_delta = ''
+
+        @turn_info = ''
         unless @direction == 'STRAIGHT'
             total_turn = Math.abs(total_bearing_delta)
             deg_per_m = total_turn / @distance
-            if deg_per_m < 0.3
-                @turn_info += ' 6'
-            else if deg_per_m < 0.4
-                @turn_info += ' 5'
-            else if deg_per_m < 0.5
-                @turn_info += ' 4'
-            else if deg_per_m < 0.6
-                @turn_info += ' 3'
-            else if deg_per_m < 0.7
-                @turn_info += ' 2'
-            else
-                @turn_info += ' 1'
-            if total_turn > 135
-                @turn_info += ' HAIRPIN'
-            else if total_turn > 90
-                @turn_info += ' LONG'
+            @tightness = if deg_per_m < 0.3
+                    6
+                else if deg_per_m < 0.4
+                    5
+                else if deg_per_m < 0.5
+                    4
+                else if deg_per_m < 0.6
+                    3
+                else if deg_per_m < 0.7
+                    2
+                else
+                    1
+
+            @turn_type = if total_turn > 135
+                    'HAIRPIN'
+                else if total_turn > 90
+                    'LONG'
+                else
+                    ''
 
             bdiff = ((s.bearing - segments[i-1].bearing).toBearing() for s, i in segments when i > 0)
             dbdiff_dt = (b - bdiff[i-1] for b, i in bdiff when i > 0)
             total_diff = 0
             for d in dbdiff_dt
                 total_diff += d
-            if total_diff < -5
-                @turn_info += ' TIGHTENS'
-            else if total_diff > 5
-                @turn_info += ' OPENS'
+            @turn_delta = if total_diff < -5
+                    'TIGHTENS'
+                else if total_diff > 5
+                    'OPENS'
+                else ''
+
+            @turn_info = [ @tightness, @turn_type, @turn_delta ].join ' '
 
             @debug_info += " (#{deg_per_m.toFixed 2} deg/m, total turn #{total_turn.toFixed 2} deg), total bearing diff #{total_diff.toFixed 2}"
             @debug_info = ''
 
     toString: () ->
         #curve_breakdown = "\n" + ( "\t#{segment.toString()}" for segment in @segments ).join '\n'
-        """#{@direction} #{@climb} #{@turn_info} #{@rounded_distance}m #{@debug_info}""".replace(/\s+/g, ' ')
+        """#{@direction} #{@turn_info} #{@climb} #{@rounded_distance}m #{@debug_info}""".replace(/\s+/g, ' ')
+
+    toHTML: () ->
+        """#{@direction} <strong>#{@tightness}</strong> #{@turn_type} #{@turn_delta} #{@climb} #{@rounded_distance}m #{@debug_info}"""
+
+    directionIconHTML: () ->
+        """<i class="#{DIRECTION_TO_ICON_CLASS[@direction]} icon-large"></i>"""
 
 class Step
     # A gmaps "step"
@@ -196,6 +225,20 @@ class Step
 
     toString: () ->
         "[Step ##{@step_idx+1}: #{@instructions}]"
+
+class Leg
+    # A gmaps "leg"
+    constructor: (leg_idx, start, end, steps) ->
+        @leg_idx = leg_idx
+        @start = start
+        @end = end
+        @steps = steps
+
+    toString: () ->
+        """#{@start} to #{@end}"""
+
+    toHTML: () ->
+        """<strong>#{@start}</strong> to <strong>#{@end}</strong>"""
 
 generateCurvesForStep = (step_idx, instructions, segments, callback) ->
     # Returns list of Curves
@@ -305,27 +348,30 @@ parseMapData = (mapData_obj, callback) ->
     # Calls callback with steps
     throw "Could not get directions, status was: #{mapData_obj.status}" unless mapData_obj.status == 'OK'
     steps = []
-    for route in mapData_obj.routes
-        for leg in route.legs
-            for step, step_idx in leg.steps
-                #continue unless step_idx == 2 # DEBUG
-                steps.push null
-                polyline = step.polyline.points
-                instructions = step.html_instructions
-                do (polyline, instructions, step_idx, steps) ->
-                    getSegments polyline, (segments) ->
-                        generateCurvesForStep step_idx, instructions, segments, (curves) ->
-                            steps[step_idx] = new Step(step_idx, instructions, curves)
-                            if (s for s in steps when s is null).length == 0
-                                # done waiting for elevation callbacks
-                                #displaySteps steps
-                                callback steps
-                        #console.log "--- Step #{step_idx}: #{instructions}"
-                        #for segment in segment_data
-                        #    console.log "#{step_idx}: #{segment.toString()}"
+    # Take first route for now
+    route = mapData_obj.routes[0]
+    for leg, leg_idx in route.legs
+        for step, step_idx in leg.steps
+            #continue unless step_idx == 2 # DEBUG
+            steps.push null
+            polyline = step.polyline.points
+            instructions = step.html_instructions
+            do (polyline, instructions, step_idx, steps) ->
+                getSegments polyline, (segments) ->
+                    generateCurvesForStep step_idx, instructions, segments, (curves) ->
+                        steps[step_idx] = new Step(step_idx, instructions, curves)
+                        if (s for s in steps when s is null).length == 0
+                            # done waiting for elevation callbacks
+                            callback
+                                leg: new Leg(leg_idx, leg.start_address, leg.end_address, steps)
+                                error: null
+                    #console.log "--- Step #{step_idx}: #{instructions}"
+                    #for segment in segment_data
+                    #    console.log "#{step_idx}: #{segment.toString()}"
 
-displaySteps = (steps) ->
-    for step in steps
+displaySteps = (leg) ->
+    console.log leg.toString()
+    for step in leg.steps
         console.log step.toString()
         for curve in step.curves
             console.log "  #{curve.toString()}"
@@ -338,10 +384,17 @@ getElevationsAlongPolyline = (polyline, callback) ->
     else
         https.get "https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline}", (res) ->
             json = ''
+            console.log "status code #{response.statusCode}"
+            switch response.statusCode
+                when 414
+                    throw "Step is too long to fetch elevations"
             res.on 'data', (chunk) ->
                 json += chunk
             res.on 'end', () ->
-                parseElevationData JSON.parse(json), callback
+                try
+                    parseElevationData JSON.parse(json), callback
+                catch err
+                    console.log "Error parsing JSON from https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline} - error was #{err}"
         .on 'error', (e) ->
             console.log "Error: #{e.message}"
 
