@@ -1,13 +1,9 @@
 express = require 'express'
-#engines = require 'consolidate'
-#require 'hamljs-coffee'
-
 pacenotes = require './lib/pacenotes'
 
 app = express()
 
 app.configure () ->
-#    app.engine 'haml', engines.haml
     app.set 'view engine', 'jade'
 
 app.use express.static(__dirname + '/public')

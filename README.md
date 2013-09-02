@@ -4,3 +4,6 @@ curve-by-curve info, not just turn-by-turn.
 Note: I have not co-driven for anyone and don't actually know how pace
 notes should actually work.  This is for amusement only.  **Please do
 not use this for your own rallying adventures.**
+
+`npm install` to install dependencies, then `coffee server.coffee` to
+run the Express server.
