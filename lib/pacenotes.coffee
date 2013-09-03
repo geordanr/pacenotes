@@ -50,7 +50,6 @@ exports.paceNotes = (origin, destination, callback=displaySteps) ->
         fs.readFile 'directions.json', (err, data) ->
             parseMapData JSON.parse(data), callback
     else
-        console.log "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}"
         https.get "https://maps.googleapis.com/maps/api/directions/json?sensor=false&origin=#{origin}&destination=#{destination}", (res) ->
             json = ''
             res.on 'data', (chunk) ->
@@ -60,11 +59,11 @@ exports.paceNotes = (origin, destination, callback=displaySteps) ->
                     parseMapData JSON.parse(json), callback
                 catch err
                     callback
-                        leg: null
+                        data: null
                         error: err
         .on 'error', (e) ->
             callback
-                leg: null
+                data: null
                 error: "Error contacting Google Maps API: #{e.message}"
     null
 
@@ -242,61 +241,68 @@ class Leg
 
 generateCurvesForStep = (step_idx, instructions, segments, callback) ->
     # Returns list of Curves
+    errors = null
+    curves = null
+    try
 
-    segments = collapseStraights segments
-    if segments.length == 1
-        #console.log "shortcut straight"
-        curves = [ new Curve('STRAIGHT', segments) ]
-    else
-        prev_seg = null
-        for segment in segments
-            bearing_delta = if prev_seg? then (segment.bearing - prev_seg.bearing).toBearing() else 0
-            prev_seg = segment
-            #console.log "Step #{step_idx}: #{segment.toString()}, bearing delta #{bearing_delta.toFixed 2}"
+        segments = collapseStraights segments
+        if segments.length == 1
+            #console.log "shortcut straight"
+            curves = [ new Curve('STRAIGHT', segments) ]
+        else
+            prev_seg = null
+            for segment in segments
+                bearing_delta = if prev_seg? then (segment.bearing - prev_seg.bearing).toBearing() else 0
+                prev_seg = segment
+                #console.log "Step #{step_idx}: #{segment.toString()}, bearing delta #{bearing_delta.toFixed 2}"
 
-        curves = []
-        current_curve_segments = []
-        possible_next_straight_segments = []
+            curves = []
+            current_curve_segments = []
+            possible_next_straight_segments = []
 
-        current_curve_direction = null
-        total_curve_length = 0
+            current_curve_direction = null
+            total_curve_length = 0
 
-        for segment in segments
-            prev_segment = current_curve_segments[current_curve_segments.length-1]
-            if current_curve_segments.length < 2 and current_curve_direction is null
-                # haven't collected enough to know what's going on
-                current_curve_segments.push segment
-                total_curve_length += segment.distance
-                if current_curve_segments.length == 2
-                    # we have enough to set the direction
-                    current_curve_direction = (segment.bearing - prev_segment.bearing).toBearing().toDirection()
-                    #console.log "initial direction #{current_curve_direction} based on bearing change #{(segment.bearing - prev_segment.bearing).toBearing()}, heading #{segment.bearing.toFixed 2}"
-            else
-                # if the segment is long enough to constitute a straight on its own, output current curve and begin a new straight
-                if segment.distance > MIN_STRAIGHT_LENGTH
-                    curves.push new Curve(current_curve_direction, current_curve_segments)
-                    current_curve_segments = [ ]
-                    current_curve_direction = 'STRAIGHT'
+            for segment in segments
+                prev_segment = current_curve_segments[current_curve_segments.length-1]
+                if current_curve_segments.length < 2 and current_curve_direction is null
+                    # haven't collected enough to know what's going on
+                    current_curve_segments.push segment
+                    total_curve_length += segment.distance
+                    if current_curve_segments.length == 2
+                        # we have enough to set the direction
+                        current_curve_direction = (segment.bearing - prev_segment.bearing).toBearing().toDirection()
+                        #console.log "initial direction #{current_curve_direction} based on bearing change #{(segment.bearing - prev_segment.bearing).toBearing()}, heading #{segment.bearing.toFixed 2}"
                 else
-                    # see if this segment is valid for extending the current curve
-                    bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
-                    new_direction = bearing_delta.toDirection()
-                    #console.log "was heading #{prev_segment.bearing.toFixed 2}, now heading #{segment.bearing.toFixed 2}; bearing delta is now #{bearing_delta.toFixed 2}, setting new direction to #{new_direction}"
-
-                    if new_direction != current_curve_direction
-                        # output the current curve, but hang on to the last segment of that curve
-                        #console.log "direction changed from #{current_curve_direction} to #{new_direction}, pushing curve with direction #{current_curve_direction}"
+                    # if the segment is long enough to constitute a straight on its own, output current curve and begin a new straight
+                    if segment.distance > MIN_STRAIGHT_LENGTH
                         curves.push new Curve(current_curve_direction, current_curve_segments)
-                        current_curve_segments = [ prev_segment ]
-                        current_curve_direction = new_direction
+                        current_curve_segments = [ ]
+                        current_curve_direction = 'STRAIGHT'
+                    else
+                        # see if this segment is valid for extending the current curve
+                        bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
+                        new_direction = bearing_delta.toDirection()
+                        #console.log "was heading #{prev_segment.bearing.toFixed 2}, now heading #{segment.bearing.toFixed 2}; bearing delta is now #{bearing_delta.toFixed 2}, setting new direction to #{new_direction}"
 
-                # either way, add the segment
-                current_curve_segments.push segment
-        if current_curve_segments.length > 0
-            #console.log "leftover segments forming a curve with direction #{current_curve_direction}"
-            curves.push new Curve(current_curve_direction, current_curve_segments)
+                        if new_direction != current_curve_direction
+                            # output the current curve, but hang on to the last segment of that curve
+                            #console.log "direction changed from #{current_curve_direction} to #{new_direction}, pushing curve with direction #{current_curve_direction}"
+                            curves.push new Curve(current_curve_direction, current_curve_segments)
+                            current_curve_segments = [ prev_segment ]
+                            current_curve_direction = new_direction
 
-    callback curves
+                    # either way, add the segment
+                    current_curve_segments.push segment
+            if current_curve_segments.length > 0
+                #console.log "leftover segments forming a curve with direction #{current_curve_direction}"
+                curves.push new Curve(current_curve_direction, current_curve_segments)
+    catch err
+        errors = err
+    finally
+        callback
+            data: curves
+            error: null
 
 collapseStraights = (segments) ->
     # collapses strings of segments whose total bearing delta is < TURN_THRESHOLD_DEG
@@ -363,17 +369,18 @@ parseMapData = (mapData_obj, callback) ->
             polyline = step.polyline.points
             instructions = step.html_instructions
             do (polyline, instructions, step_idx, steps) ->
-                getSegments polyline, (segments) ->
-                    generateCurvesForStep step_idx, instructions, segments, (curves) ->
+                getSegments polyline, (result) ->
+                    #console.log "getSegments: #{result}"
+                    segments = if result.error then [] else result.data
+                    generateCurvesForStep step_idx, instructions, segments, (result) ->
+                        #console.log "generateCurvesForStep: #{result}"
+                        curves = if result.error then [] else result.data
                         steps[step_idx] = new Step(step_idx, instructions, curves)
                         if (s for s in steps when s is null).length == 0
                             # done waiting for elevation callbacks
                             callback
-                                leg: new Leg(leg_idx, leg.start_address, leg.end_address, steps)
+                                data: new Leg(leg_idx, leg.start_address, leg.end_address, steps)
                                 error: null
-                    #console.log "--- Step #{step_idx}: #{instructions}"
-                    #for segment in segment_data
-                    #    console.log "#{step_idx}: #{segment.toString()}"
 
 displaySteps = (leg) ->
     console.log leg.toString()
@@ -390,23 +397,39 @@ getElevationsAlongPolyline = (polyline, callback) ->
     else
         https.get "https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline}", (res) ->
             json = ''
-            console.log "status code #{response.statusCode}"
-            switch response.statusCode
-                when 414
-                    throw "Step is too long to fetch elevations"
-            res.on 'data', (chunk) ->
-                json += chunk
-            res.on 'end', () ->
-                try
-                    parseElevationData JSON.parse(json), callback
-                catch err
-                    console.log "Error parsing JSON from https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline} - error was #{err}"
+            if res.statusCode == 200
+                res.on 'data', (chunk) ->
+                    json += chunk
+                res.on 'end', () ->
+                    try
+                        parseElevationData JSON.parse(json), callback
+                    catch err
+                        console.log "Error parsing JSON from https://maps.googleapis.com/maps/api/elevation/json?sensor=false&locations=enc:#{polyline} - error was #{err}"
+                        callback
+                            data: null
+                            error: err
+            else
+                switch res.statusCode
+                    when 413
+                        callback
+                            data: null
+                            error: "URL is too long to fetch"
+                    when 414
+                        callback
+                            data: null
+                            error: "Step is too long to fetch elevations"
+                    else
+                        callback
+                            data: null
+                            error: "Unknown status #{res.statusCode}"
         .on 'error', (e) ->
             console.log "Error: #{e.message}"
 
 parseElevationData = (elevData_obj, callback) ->
     throw "Could not get elevation data, status was: #{elevData_obj.status}" unless elevData_obj.status == 'OK'
-    callback elevData_obj.results
+    callback
+        data: elevData_obj.results
+        error: null
 
 decodePolyline = (encoded) ->
     # returns decoded values (with diffs applied)
@@ -437,24 +460,31 @@ decodePolyline = (encoded) ->
 getSegments = (polyline, callback) ->
     # calls callback with list of Segments
     # get elevation data for this polyline
-    getElevationsAlongPolyline polyline, (elevation_data) ->
-        decoded_polyline = decodePolyline polyline
+    getElevationsAlongPolyline polyline, (result) ->
+        elevation_data = if result.error then null else result.data
         segments = []
-        i = 0
+        errors = null
+        try
+            decoded_polyline = decodePolyline polyline
+            i = 0
 
-        # initial point
-        prev_point = new Point(decoded_polyline.shift(), decoded_polyline.shift(), elevation_data[i].elevation)
+            # initial point
+            prev_point = new Point(decoded_polyline.shift(), decoded_polyline.shift(), elevation_data?[i].elevation ? 0)
 
-        i++
-        while decoded_polyline.length > 0
-            new_point = new Point(decoded_polyline.shift(), decoded_polyline.shift(), elevation_data[i].elevation)
             i++
-            new_segment = new Segment(prev_point, new_point)
-            if new_segment.distance > DISTANCE_THRESHOLD
-                segments.push new_segment
-                prev_point = new_point
-
-        callback segments
+            while decoded_polyline.length > 0
+                new_point = new Point(decoded_polyline.shift(), decoded_polyline.shift(), elevation_data?[i].elevation ? 0)
+                i++
+                new_segment = new Segment(prev_point, new_point)
+                if new_segment.distance > DISTANCE_THRESHOLD
+                    segments.push new_segment
+                    prev_point = new_point
+        catch err
+            errors = err
+        finally
+            callback
+                data: segments
+                error: errors
 
 test_decodePolyline = () ->
     results = decodePolyline('''_p~iF~ps|U_ulLnnqC_mqNvxq`@''')

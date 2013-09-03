@@ -7,8 +7,8 @@ html(lang="en")
   body
     .container
       .row
-        .span11
-          form.form-horizontal
+        .span12
+          form.form-horizontal(action='/')
             .control-group
               label.control-label(for="origin") Start
               .controls
@@ -23,7 +23,7 @@ html(lang="en")
                 input.input-xxlarge#destination(type="text", name="destination", placeholder="Enter destination address or location...", value=destination)
             .control-group
               .controls
-                button.btn#submit Get Directions
+                button.btn#get-directions Get Directions
       - if (error)
         .row
           .span12#errors
@@ -45,13 +45,22 @@ html(lang="en")
     script(src="bootstrap/js/bootstrap.min.js")
     script.
       $('document').ready(function () {
-        $('#submit').click(function (e) {
-          $(form).submit();
+        $('#get-directions').click(function (e) {
+          e.preventDefault();
+          $('form').submit();
         });
         $('#swap').click(function (e) {
-            orig = $('#origin').val();
-            dest = $('#destination').val();
-            $('#origin').val(dest);
+          e.preventDefault();
+          orig = $('#origin').val();
+          dest = $('#destination').val();
+          $('#origin').val(dest);
             $('#destination').val(orig);
+        });
+        $('input[type=text]').keypress(function (e) {
+          if (e.which == 13) {
+            e.preventDefault();
+            console.log('submitting');
+            $('form').submit();
+          }
         });
       })

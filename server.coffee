@@ -29,9 +29,14 @@ app.get '/', (req, res) ->
     if 'origin' of req.query and 'destination' of req.query
         res.locals.origin = req.query.origin
         res.locals.destination = req.query.destination
-        pacenotes.paceNotes req.query.origin, req.query.destination, (data) ->
-            res.locals.leg = data.leg
-            res.locals.error = data.error
+        try
+            pacenotes.paceNotes req.query.origin, req.query.destination, (result) ->
+                res.locals.leg = result.data
+                res.locals.error = result.error
+                res.render 'index'
+        catch err
+            res.locals.leg = null
+            res.locals.error = err
             res.render 'index'
     else
         res.locals.origin = ''
