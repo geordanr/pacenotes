@@ -144,9 +144,10 @@ class Curve
             @distance += segment.distance
             min_elevations = segment.min_elevation if segment.min_elevation < min_elevation
             max_elevations = segment.max_elevation if segment.max_elevation < max_elevation
-            total_bearing_delta += (segment.bearing - prev_bearing)
+            total_bearing_delta += (segment.bearing - prev_bearing).toBearing()
             prev_bearing = segment.bearing
             #console.log "segment bearing #{segment.bearing}"
+        #console.log "=== total bearing delta #{total_bearing_delta}"
 
         climb_attributes = []
         if Math.abs(start_elevation - end_elevation) > MIN_HILL_ELEVATION
@@ -274,8 +275,8 @@ generateCurvesForStep = (step_idx, instructions, segments, callback) ->
                         current_curve_direction = (segment.bearing - prev_segment.bearing).toBearing().toDirection()
                         #console.log "initial direction #{current_curve_direction} based on bearing change #{(segment.bearing - prev_segment.bearing).toBearing()}, heading #{segment.bearing.toFixed 2}"
                 else
-                    # if the segment is long enough to constitute a straight on its own, output current curve and begin a new straight
-                    if segment.distance > MIN_STRAIGHT_LENGTH
+                    # if the segment is long enough to constitute a straight on its own and we're not going straight already, output current curve and begin a new straight
+                    if current_curve_direction != 'STRAIGHT' and segment.distance > MIN_STRAIGHT_LENGTH
                         curves.push new Curve(current_curve_direction, current_curve_segments)
                         current_curve_segments = [ ]
                         current_curve_direction = 'STRAIGHT'

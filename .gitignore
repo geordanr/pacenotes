@@ -3,4 +3,3 @@
 *.zip
 _vimrc_local.vim
 .sass-cache
-node_modules
