@@ -272,17 +272,23 @@ generateCurvesForStep = (step_idx, instructions, segments, callback) ->
                     current_curve_direction = (segment.bearing - prev_segment.bearing).toBearing().toDirection()
                     #console.log "initial direction #{current_curve_direction} based on bearing change #{(segment.bearing - prev_segment.bearing).toBearing()}, heading #{segment.bearing.toFixed 2}"
             else
-                # see if this segment is valid for extending the current curve
-                bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
-                new_direction = bearing_delta.toDirection()
-                #console.log "was heading #{prev_segment.bearing.toFixed 2}, now heading #{segment.bearing.toFixed 2}; bearing delta is now #{bearing_delta.toFixed 2}, setting new direction to #{new_direction}"
-
-                if new_direction != current_curve_direction
-                    # output the current curve, but hang on to the last segment of that curve
-                    #console.log "direction changed from #{current_curve_direction} to #{new_direction}, pushing curve with direction #{current_curve_direction}"
+                # if the segment is long enough to constitute a straight on its own, output current curve and begin a new straight
+                if segment.distance > MIN_STRAIGHT_LENGTH
                     curves.push new Curve(current_curve_direction, current_curve_segments)
-                    current_curve_segments = [ prev_segment ]
-                    current_curve_direction = new_direction
+                    current_curve_segments = [ ]
+                    current_curve_direction = 'STRAIGHT'
+                else
+                    # see if this segment is valid for extending the current curve
+                    bearing_delta = (segment.bearing - prev_segment.bearing).toBearing()
+                    new_direction = bearing_delta.toDirection()
+                    #console.log "was heading #{prev_segment.bearing.toFixed 2}, now heading #{segment.bearing.toFixed 2}; bearing delta is now #{bearing_delta.toFixed 2}, setting new direction to #{new_direction}"
+
+                    if new_direction != current_curve_direction
+                        # output the current curve, but hang on to the last segment of that curve
+                        #console.log "direction changed from #{current_curve_direction} to #{new_direction}, pushing curve with direction #{current_curve_direction}"
+                        curves.push new Curve(current_curve_direction, current_curve_segments)
+                        current_curve_segments = [ prev_segment ]
+                        current_curve_direction = new_direction
 
                 # either way, add the segment
                 current_curve_segments.push segment
