@@ -10,7 +10,7 @@ app.configure 'development', () ->
     app.set 'port', 3000
 
 app.configure 'production', () ->
-    app.set 'port', 80
+    app.set 'port', process.env.PORT ? 80
 
 app.use (req, res, next) ->
     console.log "#{new Date().toUTCString()} #{req.ip} #{req.method} #{req.path}"
